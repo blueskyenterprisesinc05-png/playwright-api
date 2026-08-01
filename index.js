@@ -5,6 +5,17 @@ const app = express();
 
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.send("Playwright API is running");
+});
+
+app.get("/version", (req, res) => {
+  res.json({
+    version: "debug-v1",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.post("/submit", async (req, res) => {
   let browser;
 
@@ -20,43 +31,55 @@ app.post("/submit", async (req, res) => {
 
     const page = await browser.newPage();
 
+    console.log("Opening SurveyMars...");
+
     await page.goto("https://surveymars.com/q/ils9CNDny", {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
 
-    await page.waitForSelector("input[type='text']", {
-      timeout: 30000,
+    console.log("Page loaded.");
+
+    const title = await page.title();
+    const url = page.url();
+
+    console.log("TITLE:", title);
+    console.log("URL:", url);
+
+    // Save screenshot for debugging
+    await page.screenshot({
+      path: "/tmp/survey.png",
+      fullPage: true,
     });
 
-    const inputs = page.locator("input[type='text']");
-    const values = Object.values(req.body);
+    const html = await page.content();
 
-    for (let i = 0; i < values.length && i < await inputs.count(); i++) {
-      await inputs.nth(i).fill(String(values[i]));
-    }
-
-    const submit = page.getByRole("button", { name: /submit/i });
-
-    if (await submit.count()) {
-      await submit.click();
-    }
+    console.log("========== HTML PREVIEW ==========");
+    console.log(html.substring(0, 5000));
+    console.log("==================================");
 
     res.json({
       success: true,
-      title: await page.title(),
+      title,
+      url,
+      htmlPreview: html.substring(0, 1000),
     });
-
   } catch (err) {
+    console.error(err);
+
     res.status(500).json({
       success: false,
       error: err.message,
     });
   } finally {
-    if (browser) await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Server started");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
