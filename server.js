@@ -5,26 +5,52 @@ const app = express();
 
 app.use(express.json());
 
-app.post("/survey", async (req, res) => {
+app.get("/", (req, res) => {
+  res.json({
+    status: "running",
+    service: "Playwright API"
+  });
+});
 
-    const answers = req.body.answers;
+app.post("/test", async (req, res) => {
+  let browser;
 
-    const browser = await chromium.launch({
-        headless: true
+  try {
+    browser = await chromium.launch({
+      headless: true
     });
 
     const page = await browser.newPage();
 
-    await page.goto("https://surveymars.com/q/ils9CNDny");
+    await page.goto("https://example.com", {
+      waitUntil: "networkidle"
+    });
 
-    // we'll fill the form later
+    const title = await page.title();
 
     await browser.close();
 
     res.json({
-        success: true
+      success: true,
+      title
     });
 
+  } catch (error) {
+
+    if (browser) {
+      await browser.close();
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+
+  }
 });
 
-app.listen(3000);
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Playwright API running on port ${PORT}`);
+});
