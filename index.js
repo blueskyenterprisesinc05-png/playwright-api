@@ -2,19 +2,7 @@ const express = require("express");
 const { chromium } = require("playwright");
 
 const app = express();
-
 app.use(express.json());
-
-app.get("/", (req, res) => {
-  res.send("Playwright API is running");
-});
-
-app.get("/version", (req, res) => {
-  res.json({
-    version: "debug-v1",
-    timestamp: new Date().toISOString(),
-  });
-});
 
 app.post("/submit", async (req, res) => {
   let browser;
@@ -29,57 +17,108 @@ app.post("/submit", async (req, res) => {
       ],
     });
 
-    const page = await browser.newPage();
+    const page = await browser.newPage({
+      viewport: { width: 1366, height: 768 },
+    });
 
-    console.log("Opening SurveyMars...");
+    page.setDefaultTimeout(90000);
 
-    await page.goto("https://surveymars.com/q/ils9CNDny", {
+    console.log("Opening survey...");
+
+    await page.goto("https://surveymars.com/q/yDmVhJUMu", {
       waitUntil: "domcontentloaded",
-      timeout: 60000,
+      timeout: 90000,
     });
 
-    console.log("Page loaded.");
+    //
+    // Wait for Cloudflare challenge
+    //
+    console.log("Waiting for Cloudflare...");
 
-    const title = await page.title();
-    const url = page.url();
+    await page.waitForFunction(() => {
+      return (
+        !document.title.includes("Just a moment") &&
+        !document.body.innerText.includes("Checking your browser")
+      );
+    }, { timeout: 120000 });
 
-    console.log("TITLE:", title);
-    console.log("URL:", url);
+    console.log("Cloudflare passed.");
 
-    // Save screenshot for debugging
-    await page.screenshot({
-      path: "/tmp/survey.png",
-      fullPage: true,
+    //
+    // Wait for vote options
+    //
+    await page.waitForSelector(
+      "input[type=radio], .jq-option, .answer-option",
+      {
+        timeout: 90000,
+      }
+    );
+
+    console.log("Vote options found.");
+
+    //
+    // Find the candidate from request JSON
+    //
+    const candidate = req.body.candidate;
+
+    if (!candidate) {
+      throw new Error("candidate field missing");
+    }
+
+    const locator = page.locator(`text="${candidate}"`);
+
+    await locator.first().click();
+
+    console.log("Candidate selected.");
+
+    //
+    // Submit
+    //
+    const submitButton = page.locator(
+      'button:has-text("Submit"), button:has-text("Vote"), input[type=submit]'
+    );
+
+    await submitButton.first().click();
+
+    console.log("Submitted.");
+
+    //
+    // Wait for success page
+    //
+    await page.waitForURL(/complete/, {
+      timeout: 90000,
     });
-
-    const html = await page.content();
-
-    console.log("========== HTML PREVIEW ==========");
-    console.log(html.substring(0, 5000));
-    console.log("==================================");
 
     res.json({
       success: true,
-      title,
-      url,
-      htmlPreview: html.substring(0, 1000),
+      url: page.url(),
     });
+
   } catch (err) {
+
     console.error(err);
 
     res.status(500).json({
       success: false,
       error: err.message,
     });
+
   } finally {
+
     if (browser) {
       await browser.close();
     }
+
   }
+
+});
+
+app.get("/", (_, res) => {
+  res.send("Playwright API Running");
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Listening on ${PORT}`);
 });
